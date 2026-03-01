@@ -169,6 +169,13 @@ namespace Grimoire.Utilities
                 }
 
                 locale.Name = element[0].FirstAttribute.Value;
+                string localeFileName = Path.GetFileNameWithoutExtension(filePath);
+
+                if (!string.Equals(locale.Name, localeFileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    Log.Warning($"Skipping locale because file name and locale key do not match.\n\t- File: {localeFileName}\n\t- Locale Name: {locale.Name}\n\t- Path: {filePath}");
+                    return;
+                }
 
                 List<XElement> childNodes = element[0].Elements().ToList();
                 locale.DisplayName = childNodes[0].Value;
@@ -294,7 +301,18 @@ namespace Grimoire.Utilities
                 locale.Controls = controls;
 
                 if (locale.Populated)
-                    locales.Add(locale);
+                {
+                    int existingIndex = locales.FindIndex(l => l.Name == locale.Name);
+                    if (existingIndex >= 0)
+                    {
+                        Log.Warning($"Duplicate locale key detected. Replacing existing locale: {locale.Name}");
+                        locales[existingIndex] = locale;
+                    }
+                    else
+                    {
+                        locales.Add(locale);
+                    }
+                }
 
                 Log.Debug($"{locale.Controls.Count} control configurations loaded from locale: {locale.Name} located at:\n\t- {filePath}");
             }

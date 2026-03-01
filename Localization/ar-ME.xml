@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<locale name="en-US">
+<locale name="ar-ME">
   <displayName> العربية (AR)</displayName>
   <encoding>1252</encoding>
   <font name="Microsoft Sans Serif"> <!-- If defined here all controls inherit this font unless they have their own font defined -->
