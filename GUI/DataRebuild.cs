@@ -87,11 +87,10 @@ namespace Grimoire.GUI
 
         private void set_dataList_info(int dataId)
         {
-            string dataPath = string.Format(@"{0}\data.00{1}", core.DataDirectory, dataId);
             long physicalSize = core.GetPhysicalSize(dataId);
             long storedSize = core.GetStoredSize(dataId);
             double diffSize = physicalSize - storedSize;
-            double fragPercent = diffSize / physicalSize;
+            double fragPercent = physicalSize <= 0 ? 0 : diffSize / physicalSize;
 
             if (dataList.Items[dataId].SubItems.Count == 4)
             {
@@ -114,11 +113,10 @@ namespace Grimoire.GUI
             if (dataChart.Series[0].Points.Count > 0)
                 dataChart.Series[0].Points.Clear();                
 
-            string dataPath = string.Format(@"{0}\data.00{1}", core.DataDirectory, idx);
             long physicalSize = core.GetPhysicalSize(idx);
             long storedSize = core.GetStoredSize(idx);
             double diffSize = physicalSize - storedSize;
-            double fragPercent = diffSize / physicalSize;
+            double fragPercent = physicalSize <= 0 ? 0 : diffSize / physicalSize;
 
             dataChart.Series[0].Points.Add(physicalSize);
             dataChart.Series[0].Points[0].LegendText = (idx > 0) ? string.Format("Data.00{0}", idx) : "All Data";

@@ -27,6 +27,13 @@ namespace Grimoire.GUI
             public bool ExistsInDump { get; init; }
         }
 
+        enum DumpConflictPolicy
+        {
+            AutoOverwrite,
+            SkipExisting,
+            Fail
+        }
+
         public DumpUpdater()
         {
             InitializeComponent();
@@ -160,8 +167,13 @@ namespace Grimoire.GUI
 
             var exportOptions = DataPerformanceConfig.GetExportOptions(configMan);
             int maxWorkers = Math.Max(1, exportOptions.MaxFileWorkers);
+            int ioBufferSizeBytes = Math.Max(4096, exportOptions.IoBufferSizeKb * 1024);
+            int progressIntervalMs = Math.Max(10, exportOptions.ProgressIntervalMs);
+            DumpConflictPolicy conflictPolicy = ParseConflictPolicy(configMan.Get<string>("ConflictPolicy", "DumpUpdater", "AutoOverwrite"));
             int completed = 0;
             int failed = 0;
+            int skipped = 0;
+            long lastReport = Environment.TickCount64;
             var failures = new ConcurrentBag<string>();
 
             await Parallel.ForEachAsync(entriesToCopy, new ParallelOptions
@@ -176,7 +188,26 @@ namespace Grimoire.GUI
                 try
                 {
                     Directory.CreateDirectory(destinationDirectory);
-                    await Task.Run(() => File.Copy(source, destination, overwrite: true), ct);
+
+                    if (File.Exists(destination))
+                    {
+                        if (conflictPolicy == DumpConflictPolicy.SkipExisting)
+                        {
+                            Interlocked.Increment(ref skipped);
+                        }
+                        else if (conflictPolicy == DumpConflictPolicy.Fail)
+                        {
+                            throw new IOException($"Destination exists: {destination}");
+                        }
+                        else
+                        {
+                            await CopyFileAsync(source, destination, overwrite: true, ioBufferSizeBytes, ct);
+                        }
+                    }
+                    else
+                    {
+                        await CopyFileAsync(source, destination, overwrite: false, ioBufferSizeBytes, ct);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -185,7 +216,7 @@ namespace Grimoire.GUI
                 }
 
                 int done = Interlocked.Increment(ref completed);
-                if (done == entriesToCopy.Count || done % 8 == 0)
+                if (done == entriesToCopy.Count || ShouldReportProgress(ref lastReport, progressIntervalMs))
                 {
                     if (!IsDisposed && IsHandleCreated)
                     {
@@ -205,13 +236,19 @@ namespace Grimoire.GUI
             prgBar.Value = 0;
             statusLb.Text = string.Empty;
 
-            if (failed > 0)
+            int copied = completed - failed - skipped;
+
+            if (failed > 0 || skipped > 0)
             {
-                MessageBox.Show($"Copied {completed - failed}/{completed} files.\n\n{failed} files failed and were skipped.", "Copy Completed with Warnings", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(
+                    $"Copied {copied}/{completed} files.\nSkipped: {skipped}\nFailed: {failed}",
+                    "Copy Completed with Warnings",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
             }
             else
             {
-                MessageBox.Show($"Copied {completed} files successfully.", "Copy Completed", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show($"Copied {copied} files successfully.", "Copy Completed", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
 
             copyBtn.Enabled = false;
@@ -221,6 +258,50 @@ namespace Grimoire.GUI
         {
             if (grid.Rows.Count == 0)
                 copyBtn.Enabled = false;
+        }
+
+        static DumpConflictPolicy ParseConflictPolicy(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return DumpConflictPolicy.AutoOverwrite;
+
+            return Enum.TryParse(value, true, out DumpConflictPolicy parsed) ? parsed : DumpConflictPolicy.AutoOverwrite;
+        }
+
+        static bool ShouldReportProgress(ref long lastTick, int intervalMs)
+        {
+            long now = Environment.TickCount64;
+            long previous = Interlocked.Read(ref lastTick);
+
+            if (now - previous < intervalMs)
+                return false;
+
+            return Interlocked.CompareExchange(ref lastTick, now, previous) == previous;
+        }
+
+        static async Task CopyFileAsync(string sourcePath, string destinationPath, bool overwrite, int bufferSize, CancellationToken ct)
+        {
+            FileMode destinationMode = overwrite ? FileMode.Create : FileMode.CreateNew;
+
+            using (FileStream source = new FileStream(sourcePath, new FileStreamOptions
+            {
+                Mode = FileMode.Open,
+                Access = FileAccess.Read,
+                Share = FileShare.Read,
+                BufferSize = bufferSize,
+                Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+            }))
+            using (FileStream destination = new FileStream(destinationPath, new FileStreamOptions
+            {
+                Mode = destinationMode,
+                Access = FileAccess.Write,
+                Share = FileShare.None,
+                BufferSize = bufferSize,
+                Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+            }))
+            {
+                await source.CopyToAsync(destination, bufferSize, ct);
+            }
         }
     }
 }

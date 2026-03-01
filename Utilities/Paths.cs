@@ -1,4 +1,5 @@
-﻿using System.IO;
+using System.IO;
+using System;
 using System.Windows.Forms;
 using System.Threading.Tasks;
 
@@ -114,58 +115,94 @@ namespace Grimoire.Utilities
         /// </summary>
         /// <param name="directory">Directory containing previously dumped client</param>
         /// <returns>True if the dump is ready to build a client</returns>
-#pragma warning disable CS1998
-        public async static Task<bool> VerifyDump(string directory, bool interactive = true, bool autoOverwrite = true)
+        public static Task<bool> VerifyDump(string directory, bool interactive = true, bool autoOverwrite = true)
         {
-            string[] extDirs = Directory.GetDirectories(directory);
+            if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+                return Task.FromResult(false);
 
-            for (int extIdx = 0; extIdx < extDirs.Length; extIdx++)
+            if (interactive)
+                return Task.FromResult(VerifyDumpInternal(directory, interactive, autoOverwrite));
+
+            return Task.Run(() => VerifyDumpInternal(directory, interactive, autoOverwrite));
+        }
+
+        static bool VerifyDumpInternal(string directory, bool interactive, bool autoOverwrite)
+        {
+            foreach (string extDir in Directory.GetDirectories(directory))
             {
-                string extDir = extDirs[extIdx];
+                string dirExt = NormalizeDirectoryExtension(extDir);
+                if (string.IsNullOrWhiteSpace(dirExt))
+                    continue;
 
-                //check if dir is 2 characters long (e.g. .db/.fx)
-                int extOffset = 0;
-                extOffset = (extDir[extDir.Length - 3] == '\\') ? 2 : 3;
-
-                string dirExt = extDir.Substring(extDir.Length - extOffset);
-                string[] dirFiles = Directory.GetFiles(extDirs[extIdx]);
-
-                for (int dirFileIdx = 0; dirFileIdx < dirFiles.Length; dirFileIdx++)
+                foreach (string sourcePath in Directory.GetFiles(extDir))
                 {
-                    string name = Path.GetFileName(dirFiles[dirFileIdx]);
+                    string name = Path.GetFileName(sourcePath);
+                    string fileExt = NormalizeFileExtension(name);
 
-                    extOffset = (name[name.Length - 3] == '.') ? 2 : 3;
-                    string ext = name.Substring(name.Length - extOffset);
+                    if (string.Equals(fileExt, dirExt, StringComparison.OrdinalIgnoreCase))
+                        continue;
 
-                    if (ext != dirExt)
+                    bool moveFile = !interactive || MessageBox.Show(
+                        $"File: {name} does not belong to the directory: /{dirExt}/\n\nWould you like to move it?",
+                        "Directory Mismatch Found",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Question) == DialogResult.Yes;
+
+                    if (!moveFile)
+                        return false;
+
+                    string destinationDir = Path.Combine(directory, fileExt);
+                    Directory.CreateDirectory(destinationDir);
+
+                    string destinationPath = Path.Combine(destinationDir, name);
+                    if (string.Equals(sourcePath, destinationPath, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    if (File.Exists(destinationPath))
                     {
-                        bool moveFile = !interactive || MessageBox.Show($"File: {name} does not belong to the directory: /{dirExt}/\n\nWould you like to move it", "Directory Mistmatch Found", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
+                        bool overwrite = !interactive && autoOverwrite;
 
-                        if (moveFile)
+                        if (!overwrite)
                         {
-                            string destName = $"{directory}//{ext}//{name}";
-                            string sourceName = $"{extDir}//{name}";
-
-                            if (File.Exists(destName))
-                                if (!interactive && autoOverwrite)
-                                    File.Delete(destName);
-                                else if (MessageBox.Show($"A file with the same name already exists in the destination folder!\n\nWould you like to delete it?", "Duplicate File Warning", MessageBoxButtons.YesNo, MessageBoxIcon.Exclamation) == DialogResult.Yes)
-                                    File.Delete(destName);
-                                else
-                                    return false;
-
-                            File.Move(sourceName, destName);
+                            overwrite = MessageBox.Show(
+                                "A file with the same name already exists in the destination folder.\n\nWould you like to delete it?",
+                                "Duplicate File Warning",
+                                MessageBoxButtons.YesNo,
+                                MessageBoxIcon.Exclamation) == DialogResult.Yes;
                         }
-                        else
+
+                        if (!overwrite)
                             return false;
+
+                        File.Delete(destinationPath);
                     }
+
+                    File.Move(sourcePath, destinationPath);
                 }
             }
 
             return true;
         }
-#pragma warning restore CS1998
+
+        static string NormalizeDirectoryExtension(string directoryPath)
+        {
+            string name = Path.GetFileName(directoryPath)?.Trim();
+            return string.IsNullOrEmpty(name) ? string.Empty : name.TrimStart('.').ToLowerInvariant();
+        }
+
+        static string NormalizeFileExtension(string filename)
+        {
+            string extension = Path.GetExtension(filename);
+            if (!string.IsNullOrEmpty(extension))
+                return extension.TrimStart('.').ToLowerInvariant();
+
+            if (filename.Length >= 3)
+                return filename.Substring(filename.Length - 3).ToLowerInvariant();
+
+            return filename.ToLowerInvariant();
+        }
 
         
     }
 }
+

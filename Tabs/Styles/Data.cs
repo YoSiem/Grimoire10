@@ -173,6 +173,7 @@ namespace Grimoire.Tabs.Styles
                 Log.Error(msg);
 
                 MessageBox.Show(msg, "Create Client Exception", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
             }
 
             msg = $"Building new client at:\n\t-{buildDirectory}";
@@ -662,7 +663,7 @@ namespace Grimoire.Tabs.Styles
 
             try
             {
-                actionSW.Start();
+                actionSW.Restart();
 
                 await Task.Run(() => { Core.Load(path); });
 
@@ -709,20 +710,13 @@ namespace Grimoire.Tabs.Styles
         {
             grid.RowCount = Core.RowCount;
             grid.VirtualMode = true;
-            grid.CellValueNeeded += (o, e) =>
-            {
-                if (tManager.DataTab.Filtered && tManager.DataTab.Searching || !tManager.DataTab.Filtered && tManager.DataTab.Searching)
-                    e.Value = tManager.DataTab.SearchIndex[e.RowIndex].Name;
-                else if (tManager.DataTab.Filtered && !tManager.DataTab.Searching)
-                {
-                    if (e.RowIndex < tManager.DataTab.FilterCount)
-                        e.Value = tManager.DataTab.FilteredIndex[e.RowIndex].Name;
-                }
-                else
-                    e.Value = tManager.DataCore.Index[e.RowIndex].Name;
-            };
+            grid.CellValueNeeded -= Grid_CellValueNeeded;
+            grid.CellValueNeeded += Grid_CellValueNeeded;
 
-            await Task.Run(() => { populate_selection_info(tManager.DataCore.Index[0]); });
+            if (tManager.DataCore.Index.Count > 0)
+                await Task.Run(() => { populate_selection_info(tManager.DataCore.Index[0]); });
+            else
+                populate_selection_info();
 
             extStatus.Text = "Analyzing index...";
 
@@ -741,6 +735,31 @@ namespace Grimoire.Tabs.Styles
             });
 
             extStatus.ResetText();
+        }
+
+        void Grid_CellValueNeeded(object sender, DataGridViewCellValueEventArgs e)
+        {
+            if (e.RowIndex < 0)
+                return;
+
+            if (tManager.DataTab.Filtered && tManager.DataTab.Searching || !tManager.DataTab.Filtered && tManager.DataTab.Searching)
+            {
+                if (e.RowIndex < tManager.DataTab.SearchCount)
+                    e.Value = tManager.DataTab.SearchIndex[e.RowIndex].Name;
+
+                return;
+            }
+
+            if (tManager.DataTab.Filtered && !tManager.DataTab.Searching)
+            {
+                if (e.RowIndex < tManager.DataTab.FilterCount)
+                    e.Value = tManager.DataTab.FilteredIndex[e.RowIndex].Name;
+
+                return;
+            }
+
+            if (e.RowIndex < tManager.DataCore.Index.Count)
+                e.Value = tManager.DataCore.Index[e.RowIndex].Name;
         }
 
         private async void insert_files(string[] filePaths)

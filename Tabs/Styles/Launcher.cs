@@ -512,6 +512,7 @@ namespace Grimoire.Tabs.Styles
             if (!await Paths.VerifyDump(dmpDir, interactive: false, autoOverwrite: true))
             {
                 LogUtility.MessageBoxAndLog("Dump directory could not be verified! Check for invalid extensions such as .nfe inside /nfm/ sub-directory!", "Create Client Exception", LogEventLevel.Error);
+                data_status_lb.ResetText();
 
                 return;
             }
