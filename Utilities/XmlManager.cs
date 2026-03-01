@@ -63,11 +63,21 @@ namespace Grimoire.Utilities
 
             if (!Directory.Exists(localeDir))
             {
-                string msg = "compileLocales() localeDir does not exist! Please check your grimoire.opt \"locale.directory\" value! (example value: C:\\Grimoire\\Localization)";
+                string fallbackDir = Path.Combine(AppContext.BaseDirectory, "Localization");
+                if (Directory.Exists(fallbackDir))
+                {
+                    localeDir = fallbackDir;
+                    Log.Warning($"Localization directory fallback applied:\n\t- {localeDir}");
+                }
+                else
+                {
+                    string msg = "compileLocales() localeDir does not exist! Please check your Config.json \"Localization.Directory\" value! (example value: C:\\Grimoire\\Localization)";
 
-                Log.Error(msg);
+                    Log.Error(msg);
 
-                MessageBox.Show(msg, "XML Exception", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show(msg, "XML Exception", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
             }
 
             string[] filePaths = Directory.GetFiles(localeDir);
@@ -92,14 +102,26 @@ namespace Grimoire.Utilities
 
         public void Localize(object sender, SenderType type)
         {
+            if (locales.Count == 0)
+            {
+                Log.Warning("No localization files loaded. Skipping localization pass.");
+                return;
+            }
+
             if (locales.FindIndex(l => l.Name == key) == -1)
             {
                 key = "en-US";
-                string msg = string.Format("Requested Locale: {0} does not exist!\n\t Defaulting to en-US", key);
+                string msg = string.Format("Requested Locale not found. Defaulting to en-US.");
 
                 Log.Warning(msg);
 
                 MessageBox.Show(msg, "XML Warning", MessageBoxButtons.OK, MessageBoxIcon.Hand);
+            }
+
+            if (locales.FindIndex(l => l.Name == key) == -1)
+            {
+                Log.Warning($"Locale '{key}' is still unavailable after fallback. Skipping localization pass.");
+                return;
             }
 
             switch (type)

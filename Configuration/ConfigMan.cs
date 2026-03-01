@@ -318,12 +318,18 @@ namespace Grimoire.Configuration
                 }
 
                 if (rss.Count > 0)
-                    using (StreamWriter sw = new StreamWriter("Config.json", false, Encoding.Default))
+                {
+                    string configDirectory = Path.GetDirectoryName(confPath);
+                    if (!string.IsNullOrWhiteSpace(configDirectory))
+                        System.IO.Directory.CreateDirectory(configDirectory);
+
+                    using (StreamWriter sw = new StreamWriter(confPath, false, Encoding.Default))
                     {
                         JsonSerializer serializer = new JsonSerializer();
                         serializer.Formatting = Formatting.Indented;
                         serializer.Serialize(sw, rss);
                     }
+                }
             });
         }
 

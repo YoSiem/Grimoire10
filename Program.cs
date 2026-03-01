@@ -19,6 +19,7 @@ namespace Grimoire
         static void Main()
         {
             System.Text.Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+            Directory.SetCurrentDirectory(AppContext.BaseDirectory);
 
             Application.SetHighDpiMode(HighDpiMode.SystemAware);
             Application.EnableVisualStyles();
