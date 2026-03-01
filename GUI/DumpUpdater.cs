@@ -1,11 +1,10 @@
-﻿using System;
+using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
 using System.Drawing;
-using System.Linq;
-using System.Text;
 using System.IO;
+using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Grimoire.Configuration;
@@ -15,9 +14,18 @@ namespace Grimoire.GUI
 {
     public partial class DumpUpdater : Form
     {
-        ConfigManager configMan = GUI.Main.Instance.ConfigMgr;
+        readonly ConfigManager configMan = GUI.Main.Instance.ConfigMgr;
+        readonly List<DumpFileEntry> indexedEntries = new List<DumpFileEntry>();
 
-        string dumpDir; 
+        string dumpDir;
+
+        sealed class DumpFileEntry
+        {
+            public string Name { get; init; }
+            public string SourceDirectory { get; init; }
+            public string DestinationExtension { get; init; }
+            public bool ExistsInDump { get; init; }
+        }
 
         public DumpUpdater()
         {
@@ -42,164 +50,176 @@ namespace Grimoire.GUI
 
         private async void DumpUpdater_DragDrop(object sender, DragEventArgs e)
         {
-            string[] filenames = (string[])e.Data.GetData(DataFormats.FileDrop);
-
-            if ((File.GetAttributes(filenames[0]) & FileAttributes.Directory) == FileAttributes.Directory)
-                filenames = Directory.GetFiles(filenames[0]);
+            string[] dropped = (string[])e.Data.GetData(DataFormats.FileDrop);
+            string[] files = ExpandDroppedFiles(dropped);
 
             statusLb.Text = "Indexing...";
-
-            prgBar.Maximum = filenames.Length;
-
-            await Task.Run(() => { process_files(filenames); });
-
+            copyBtn.Enabled = false;
             prgBar.Maximum = 100;
             prgBar.Value = 0;
 
-            statusLb.Text = $"{filenames.Length} files indexed";
+            List<DumpFileEntry> indexed = await Task.Run(() => IndexFiles(files));
+
+            indexedEntries.Clear();
+            indexedEntries.AddRange(indexed);
+            BindGrid(indexedEntries);
+
+            statusLb.Text = $"{indexedEntries.Count} files indexed";
+            copyBtn.Enabled = indexedEntries.Count > 0;
         }
 
-        void process_files(string[] filenames)
+        static string[] ExpandDroppedFiles(string[] dropped)
         {
-            for (int i = 0; i < filenames.Length; i++)
+            if (dropped is null || dropped.Length == 0)
+                return Array.Empty<string>();
+
+            if (dropped.Length == 1 && Directory.Exists(dropped[0]))
+                return Directory.GetFiles(dropped[0], "*", SearchOption.TopDirectoryOnly);
+
+            return dropped.Where(File.Exists).ToArray();
+        }
+
+        List<DumpFileEntry> IndexFiles(string[] files)
+        {
+            var result = new List<DumpFileEntry>(files.Length);
+
+            foreach (string file in files)
             {
-                string filename = filenames[i];
-                string name = Path.GetFileName(filename).ToLower();
-                string dir = Path.GetDirectoryName(filename);
-                int extOffset = (name[name.Length - 3] == '.') ? 2 : 3;
-                string dest = name.Substring(name.Length - extOffset);
-                bool exists = File.Exists($"{dumpDir}//{dest}//{name}");
+                string name = Path.GetFileName(file).ToLowerInvariant();
+                string source = Path.GetDirectoryName(file);
+                string extensionDirectory = GetExtensionDirectory(name);
+                string destination = Path.Combine(dumpDir, extensionDirectory, name);
 
-                if (!grid.Disposing)
+                result.Add(new DumpFileEntry
                 {
-                    Invoke(new MethodInvoker(delegate
-                    {
-                        statusLb.Text = $"Indexing: {name}...";
+                    Name = name,
+                    SourceDirectory = source,
+                    DestinationExtension = extensionDirectory,
+                    ExistsInDump = File.Exists(destination)
+                });
+            }
 
-                        DataGridViewRow dgvr = (DataGridViewRow)grid.RowTemplate.Clone();
-                        dgvr.CreateCells(grid);
-                        dgvr.Cells[0].Value = name;
-                        dgvr.Cells[1].Value = dir;
-                        dgvr.Cells[2].Value = dest;
-                        dgvr.Cells[3].Value = (exists) ? "Yes" : "No";
+            return result;
+        }
 
-                        if (exists)
-                            dgvr.DefaultCellStyle.BackColor = Color.FromArgb(255, 124, 124);
-                        else
-                            dgvr.DefaultCellStyle.BackColor = Color.PaleGreen;
+        static string GetExtensionDirectory(string filename)
+        {
+            string extension = Path.GetExtension(filename);
 
-                        grid.Rows.Add(dgvr);
+            if (!string.IsNullOrEmpty(extension))
+                return extension.TrimStart('.').ToLowerInvariant();
 
-                        if (i * 100 / filenames.Length != ((i - 1) * 100 / filenames.Length))
-                            prgBar.Value = i;
+            return filename.Length >= 3 ? filename.Substring(filename.Length - 3).ToLowerInvariant() : filename.ToLowerInvariant();
+        }
 
-                        if (grid.Rows.Count > 0)
-                            copyBtn.Enabled = true;
-                    }));
+        void BindGrid(List<DumpFileEntry> entries)
+        {
+            grid.SuspendLayout();
+            try
+            {
+                grid.Rows.Clear();
+
+                foreach (DumpFileEntry entry in entries)
+                {
+                    int rowIndex = grid.Rows.Add(entry.Name, entry.SourceDirectory, entry.DestinationExtension, entry.ExistsInDump ? "Yes" : "No");
+                    DataGridViewRow row = grid.Rows[rowIndex];
+                    row.DefaultCellStyle.BackColor = entry.ExistsInDump ? Color.FromArgb(255, 124, 124) : Color.PaleGreen;
                 }
+            }
+            finally
+            {
+                grid.ResumeLayout();
             }
         }
 
         private async void copyBtn_Click(object sender, EventArgs e)
         {
-            if (MessageBox.Show("You are about to copy all the listed files into the choosen dump directory!\n\nDo you want to continue?", "Input Required", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.No)
+            List<DumpFileEntry> entriesToCopy = grid.Rows
+                .Cast<DataGridViewRow>()
+                .Where(r => !r.IsNewRow)
+                .Select(r => new DumpFileEntry
+                {
+                    Name = r.Cells[0].Value?.ToString() ?? string.Empty,
+                    SourceDirectory = r.Cells[1].Value?.ToString() ?? string.Empty,
+                    DestinationExtension = r.Cells[2].Value?.ToString() ?? string.Empty,
+                    ExistsInDump = string.Equals(r.Cells[3].Value?.ToString(), "Yes", StringComparison.OrdinalIgnoreCase)
+                })
+                .Where(e => !string.IsNullOrEmpty(e.Name) && !string.IsNullOrEmpty(e.SourceDirectory) && !string.IsNullOrEmpty(e.DestinationExtension))
+                .ToList();
+
+            if (entriesToCopy.Count == 0)
                 return;
 
-            bool copy = default;
+            if (MessageBox.Show("You are about to copy all indexed files into the selected dump directory with overwrite enabled.\n\nDo you want to continue?", "Input Required", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.No)
+                return;
 
-            int total = grid.Rows.Count;
-            int count = total;
-            int failCount = 0;
+            copyBtn.Enabled = false;
+            prgBar.Maximum = entriesToCopy.Count;
+            prgBar.Value = 0;
+            statusLb.Text = "Copying files...";
 
-            prgBar.Maximum = total;
+            var exportOptions = DataPerformanceConfig.GetExportOptions(configMan);
+            int maxWorkers = Math.Max(1, exportOptions.MaxFileWorkers);
+            int completed = 0;
+            int failed = 0;
+            var failures = new ConcurrentBag<string>();
 
-            while (count > 0)
+            await Parallel.ForEachAsync(entriesToCopy, new ParallelOptions
             {
-                DataGridViewRow row = grid.Rows[0];
+                MaxDegreeOfParallelism = maxWorkers
+            }, async (entry, ct) =>
+            {
+                string source = Path.Combine(entry.SourceDirectory, entry.Name);
+                string destinationDirectory = Path.Combine(dumpDir, entry.DestinationExtension);
+                string destination = Path.Combine(destinationDirectory, entry.Name);
 
-                copy = false;
-
-                string name = row.Cells["name"].Value.ToString();
-                string sourceFldr = row.Cells["source"].Value.ToString();
-                string extFldr = row.Cells["destination"].Value.ToString();
-                string destFldr = $"{dumpDir}\\{extFldr}";
-                string exists = row.Cells["exists"].Value.ToString();
-
-                string source = $"{sourceFldr}\\{name}";
-                string destination = $"{dumpDir}\\{extFldr}\\{name}";
-
-                if (exists == "Yes")
+                try
                 {
-                    if (configMan["OverwriteExisting", "DumpUpdater"])
-                        copy = true;
-
-                    if (!copy)
-                    {
-                        FileInfo srcInfo = new FileInfo(source);
-                        FileInfo destInfo = new FileInfo(destination);
-
-                        string srcSize = StringExt.SizeToString(srcInfo.Length);
-                        string destSize = StringExt.SizeToString(destInfo.Length);
-
-                        string srcDate = srcInfo.CreationTime.ToString("yyyy-MM-dd");
-                        string destDate = destInfo.CreationTime.ToString("yyyy-MM-dd");
-
-                        if (MessageBox.Show($"{name} already exists in the dump!\n\n" +
-                            $"Existing File: Created: {destDate} Size: {destSize}\n" +
-                            $"New Info: Created: {srcDate} Size: {srcSize}\n\n" +
-                            $"Do you want to overwrite it?", "File Conflict", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
-                            copy = true;
-                    }
+                    Directory.CreateDirectory(destinationDirectory);
+                    await Task.Run(() => File.Copy(source, destination, overwrite: true), ct);
                 }
-                else
-                    copy = true;
-
-                if (copy)
+                catch (Exception ex)
                 {
-                    if (File.Exists(destination))
-                        File.Delete(destination);
-
-                    if (!Directory.Exists(destFldr))
-                    {
-                        copy = false;
-                        MessageBox.Show($"The destination folder: {destFldr} does not exist!", "Directory Exception", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
-                    }
-
-                    if (copy)
-                    {
-                        try
-                        {
-                            statusLb.Text = $"Copying {name}...";
-
-                            await Task.Run(() => { File.Copy(source, destination); });
-                        }
-                        catch (Exception ex)
-                        {
-                            MessageBox.Show($"Could not copy {name}\n\nMessage: {ex.Message}", "Exception Occured", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        }
-                    }
-                    else
-                        failCount++;
+                    Interlocked.Increment(ref failed);
+                    failures.Add($"{entry.Name}: {ex.Message}");
                 }
 
-                grid.Rows.Remove(row);
+                int done = Interlocked.Increment(ref completed);
+                if (done == entriesToCopy.Count || done % 8 == 0)
+                {
+                    if (!IsDisposed && IsHandleCreated)
+                    {
+                        BeginInvoke(new MethodInvoker(delegate
+                        {
+                            prgBar.Value = Math.Min(done, prgBar.Maximum);
+                            statusLb.Text = $"Copying files... {done}/{entriesToCopy.Count}";
+                        }));
+                    }
+                }
+            });
 
-                prgBar.Value = total - count;
-
-                count--;
-            }
-
-            if (failCount > 0)
-                MessageBox.Show($"{failCount} files could not be copied into the dump directory!", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            indexedEntries.Clear();
+            grid.Rows.Clear();
 
             prgBar.Maximum = 100;
             prgBar.Value = 0;
             statusLb.Text = string.Empty;
+
+            if (failed > 0)
+            {
+                MessageBox.Show($"Copied {completed - failed}/{completed} files.\n\n{failed} files failed and were skipped.", "Copy Completed with Warnings", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            else
+            {
+                MessageBox.Show($"Copied {completed} files successfully.", "Copy Completed", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+
+            copyBtn.Enabled = false;
         }
 
         private void grid_RowsRemoved(object sender, DataGridViewRowsRemovedEventArgs e)
         {
-            if (e.RowCount == 0)
+            if (grid.Rows.Count == 0)
                 copyBtn.Enabled = false;
         }
     }

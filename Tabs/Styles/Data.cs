@@ -158,6 +158,7 @@ namespace Grimoire.Tabs.Styles
         {
             Paths.Description = "Please select a Dump Directory";
             string dumpDirectory = Paths.FolderPath;
+            DataBuildOptions buildOptions = DataPerformanceConfig.GetBuildOptions(configMan);
 
             if (Paths.FolderResult != DialogResult.OK)
                 return;
@@ -165,7 +166,7 @@ namespace Grimoire.Tabs.Styles
             string buildDirectory = configMan.GetDirectory("BuildDirectory", "Grim");
             string msg = null;
 
-            if (!await Paths.VerifyDump(dumpDirectory))
+            if (!await Paths.VerifyDump(dumpDirectory, interactive: false, autoOverwrite: true))
             {
                 msg = "There are issues with your dump structure! Please verify that files are in their proper extension folder (e.g. .nfe in /nfe/ folder!)";
 
@@ -189,9 +190,7 @@ namespace Grimoire.Tabs.Styles
 
                 Core.Backups = false;
 
-                await Task.Run(() => {
-                    Core.BuildDataFiles(dumpDirectory, buildDirectory);
-                });
+                await Core.BuildDataFilesAsync(dumpDirectory, buildDirectory, buildOptions);
 
                 msg = "Client build completed!";
 
@@ -378,6 +377,7 @@ namespace Grimoire.Tabs.Styles
         {
             string buildDirectory = configMan.GetDirectory("BuildDirectory", "Grim");
             string ext = extensions.SelectedNode.Text;
+            DataExportOptions exportOptions = DataPerformanceConfig.GetExportOptions(configMan);
 
             if (!Directory.Exists(buildDirectory))
             {
@@ -397,20 +397,19 @@ namespace Grimoire.Tabs.Styles
 
                 try
                 {
-                    await Task.Run(() =>
+                    if (ext == "all")
                     {
-                        if (ext == "all")
-                            Core.ExportAllEntries(buildDirectory);
-                        else
-                        {
-                            buildDirectory += $@"\{ext}\";
+                        await Core.ExportAllEntriesAsync(buildDirectory, exportOptions);
+                    }
+                    else
+                    {
+                        buildDirectory += $@"\{ext}\";
 
-                            if (!Directory.Exists(buildDirectory))
-                                Directory.CreateDirectory(buildDirectory);
+                        if (!Directory.Exists(buildDirectory))
+                            Directory.CreateDirectory(buildDirectory);
 
-                            Core.ExportExtEntries(buildDirectory, ext);
-                        }
-                    });
+                        await Core.ExportExtEntriesAsync(buildDirectory, ext, exportOptions);
+                    }
 
                     Log.Information($"Exported {entries.Count} rows from {tManager.Text}");
                 }

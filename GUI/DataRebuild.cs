@@ -146,22 +146,20 @@ namespace Grimoire.GUI
             
             try
             {
+                DataRebuildOptions rebuildOptions = DataPerformanceConfig.GetRebuildOptions(configMan);
+                int[] dataIds = Enumerable.Range(1, 8).ToArray();
+
                 dataList.Items[0].SubItems[1].Text = string.Empty;
                 dataList.Items[0].SubItems[3].Text = string.Empty;
+                totalProgress.Style = ProgressBarStyle.Marquee;
+                totalProgress.MarqueeAnimationSpeed = 35;
+
+                await core.RebuildDataFilesAsync(dataIds, rebuildOptions);
 
                 for (int i = 1; i <= 8; i++)
-                {
-                    await Task.Run(() => { core.RebuildDataFile(i, core.DataDirectory); });
-
-                    cleanup(i);
-
                     set_dataList_info(i);
-                    dataList.Items[i].Selected = true;
-                    totalProgress.Value++;
-                }
 
                 set_dataList_info(0);
-                core.Save(core.DataDirectory);
             }
             catch (Exception ex)
             {
@@ -171,6 +169,12 @@ namespace Grimoire.GUI
 
                 return;
             }
+            finally
+            {
+                totalProgress.Style = ProgressBarStyle.Blocks;
+                totalProgress.MarqueeAnimationSpeed = 0;
+                totalProgress.Value = totalProgress.Maximum;
+            }
 
             statusMsg = "Rebuild complete!";
 
@@ -179,25 +183,6 @@ namespace Grimoire.GUI
             MessageBox.Show(statusMsg, "Rebuild Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
             status.ResetText();
-        }
-
-        private void cleanup(int dataId)
-        {
-            string path = string.Format(@"{0}\data.00{1}", core.DataDirectory, dataId);
-            string newPath = path + "_NEW";
-            string bakPath = path + "_BAK";
-
-            if (File.Exists(path) & File.Exists(newPath))
-            {
-                if (!File.Exists(bakPath))
-                    if (MessageBox.Show(string.Format("Backup Not Detected! Are you sure you want to delete the original at\n\n{0}", path)) != DialogResult.Yes)
-                        return;
-
-                File.Delete(path);
-                File.Move(newPath, path);
-
-                Log.Information($"Backup cleaning completed!\n\tFile Deleted: {path}\n\tFile Moved\n\t\tFrom: {newPath}\n\t\t{path}");
-            }
         }
 
         public void localize() =>

@@ -2,9 +2,9 @@
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
-using System.Data.SqlClient;
 using System.Diagnostics;
 using System.Threading.Tasks;
+using Microsoft.Data.SqlClient;
 using Archimedes;
 using Archimedes.Cells;
 using Archimedes.Enums;
@@ -219,39 +219,35 @@ namespace Grimoire.Utilities
         static string worldPass = configMgr["WorldPass"];
         static bool trusted = configMgr.Get<bool>("Trusted", "DB", false);
 
-        static string connStr = $"Server={ip};";
-
         /// <summary>
         /// Automatically generated connection string based on settings provided in the Config.json
         /// </summary>
         public static string ConnectionString
         {
-            get
-            {
-                connStr += $"Database={worldName};";
-
-                if (trusted)
-                    connStr += "Trusted_Connection=true;";
-                else
-                    connStr += $"User ID={worldUser};Password={worldPass}";
-
-                return connStr;
-
-            }
+            get => BuildConnectionString(worldName);
         }
 
         static DatabaseObject dbObj = null;
 
-        public static string NewConnectionString(string database)
+        public static string NewConnectionString(string database) => BuildConnectionString(database ?? worldName);
+
+        static string BuildConnectionString(string database)
         {
-            connStr += $"Database={worldName};";
+            SqlConnectionStringBuilder builder = new SqlConnectionStringBuilder
+            {
+                DataSource = ip,
+                InitialCatalog = database
+            };
 
             if (trusted)
-                connStr += "Trusted_Connection=true;";
+                builder.IntegratedSecurity = true;
             else
-                connStr += $"User ID={worldUser};Password={worldPass}";
+            {
+                builder.UserID = worldUser;
+                builder.Password = worldPass;
+            }
 
-            return connStr;
+            return builder.ConnectionString;
         }
 
         /// <summary>

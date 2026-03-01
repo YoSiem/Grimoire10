@@ -89,7 +89,15 @@
     "Directory": ".\\Enums"
   },
   "DumpUpdater": {
-    "OverwriteExisting": false
+    "OverwriteExisting": false,
+    "ConflictPolicy": "AutoOverwrite"
+  },
+  "DataPerformance": {
+    "MaxParallelDataFiles": 8,
+    "MaxFileWorkers": 8,
+    "IoBufferSizeKb": 1024,
+    "ProgressIntervalMs": 100,
+    "UseLegacyPipeline": false
   },
   "SPR": {
     "IgnoreSize": true,

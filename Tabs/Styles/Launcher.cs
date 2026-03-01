@@ -16,6 +16,7 @@ using Grimoire.GUI;
 using Grimoire.Utilities;
 using Grimoire.Structures;
 
+using DataCore;
 using DataCore.Functions;
 
 using Serilog;
@@ -41,6 +42,7 @@ namespace Grimoire.Tabs.Styles
         Progress<int> taskProgress;
 
         Stopwatch actionSW = new Stopwatch();
+        bool dataEventsHooked;
         #endregion
 
         #region Properties
@@ -122,11 +124,6 @@ namespace Grimoire.Tabs.Styles
 
         private void dumpClient_btn_DragDrop(object sender, DragEventArgs e)
         {
-            Encoding encoding = Encoding.GetEncoding(configMgr.Get<int>("Codepage", "Grim"));
-            bool backup = configMgr.Get<bool>("Backup", "data");
-
-            data = new DataCore.Core(backup, encoding);
-
             string[] paths = (string[])e.Data.GetData(DataFormats.FileDrop);
             string dataPath = null;
 
@@ -428,6 +425,71 @@ namespace Grimoire.Tabs.Styles
 
         void initLinks() => StructLinkUtility.Parse();
 
+        void ensureDataCore(bool backup, Encoding encoding)
+        {
+            unhookDataCoreEvents();
+            data = new DataCore.Core(backup, encoding);
+            hookDataCoreEvents();
+        }
+
+        void hookDataCoreEvents()
+        {
+            if (data == null || dataEventsHooked)
+                return;
+
+            data.CurrentMaxDetermined += Data_CurrentMaxDetermined;
+            data.CurrentProgressChanged += Data_CurrentProgressChanged;
+            data.CurrentProgressReset += Data_CurrentProgressReset;
+            dataEventsHooked = true;
+        }
+
+        void unhookDataCoreEvents()
+        {
+            if (data == null || !dataEventsHooked)
+                return;
+
+            data.CurrentMaxDetermined -= Data_CurrentMaxDetermined;
+            data.CurrentProgressChanged -= Data_CurrentProgressChanged;
+            data.CurrentProgressReset -= Data_CurrentProgressReset;
+            dataEventsHooked = false;
+        }
+
+        void Data_CurrentMaxDetermined(object sender, CurrentMaxArgs e)
+        {
+            if (IsDisposed || !IsHandleCreated)
+                return;
+
+            BeginInvoke(new MethodInvoker(delegate
+            {
+                data_prg.Maximum = Math.Max(1, (int)e.Maximum);
+            }));
+        }
+
+        void Data_CurrentProgressChanged(object sender, CurrentChangedArgs e)
+        {
+            if (IsDisposed || !IsHandleCreated)
+                return;
+
+            BeginInvoke(new MethodInvoker(delegate
+            {
+                int max = Math.Max(1, data_prg.Maximum);
+                int value = (int)Math.Clamp(e.Value, 0, max);
+                data_prg.Value = value;
+            }));
+        }
+
+        void Data_CurrentProgressReset(object sender, CurrentResetArgs e)
+        {
+            if (IsDisposed || !IsHandleCreated)
+                return;
+
+            BeginInvoke(new MethodInvoker(delegate
+            {
+                data_prg.Maximum = 100;
+                data_prg.Value = 0;
+            }));
+        }
+
         async void createClient(string dumpDirectory = null)
         {
             Paths.Title = "Please select your client dump";
@@ -436,6 +498,7 @@ namespace Grimoire.Tabs.Styles
             bool backup = configMgr.Get<bool>("Backup", "data", true);
             string dmpDir = (dumpDirectory is null) ? configMgr.GetDirectory("DumpDirectory", "Grim") ?? Paths.FolderPath : dumpDirectory;
             string buildDir = configMgr.GetDirectory("BuildDirectory", "Grim");
+            DataBuildOptions buildOptions = DataPerformanceConfig.GetBuildOptions(configMgr);
 
             if (!Directory.Exists(dmpDir))
             {
@@ -446,43 +509,14 @@ namespace Grimoire.Tabs.Styles
 
             data_status_lb.Text = "Working...";
 
-            if (!await Paths.VerifyDump(dmpDir))
+            if (!await Paths.VerifyDump(dmpDir, interactive: false, autoOverwrite: true))
             {
                 LogUtility.MessageBoxAndLog("Dump directory could not be verified! Check for invalid extensions such as .nfe inside /nfm/ sub-directory!", "Create Client Exception", LogEventLevel.Error);
 
                 return;
             }
 
-            if (data != null && data.RowCount > 0)
-                data.Clear();
-
-            if (data == null)
-                data = new DataCore.Core(backup, encoding);
-
-            data.CurrentMaxDetermined += (o, x) =>
-            {
-                this.Invoke(new MethodInvoker(delegate
-                {
-                    data_prg.Maximum = (int)x.Maximum;
-                }));
-            };
-
-            data.CurrentProgressChanged += (o, x) =>
-            {
-                this.Invoke(new MethodInvoker(delegate
-                {
-                    data_prg.Value = (int)x.Value;
-                }));
-            };
-
-            data.CurrentProgressReset += (o, x) =>
-            {
-                this.Invoke(new MethodInvoker(delegate
-                {
-                    data_prg.Maximum = 100;
-                    data_prg.Value = 0;
-                }));
-            };
+            ensureDataCore(backup, encoding);
 
             newClient_btn.Enabled = false;
             dumpClient_btn.Enabled = false;
@@ -491,9 +525,7 @@ namespace Grimoire.Tabs.Styles
 
             try
             {
-                await Task.Run(() => { data.BuildDataFiles(dmpDir, buildDir); });
-
-                data.Save(buildDir);
+                await data.BuildDataFilesAsync(dmpDir, buildDir, buildOptions);
 
                 actionSW.Stop();
 
@@ -504,44 +536,23 @@ namespace Grimoire.Tabs.Styles
                 actionSW.Stop();
 
                 LogUtility.MessageBoxAndLog($"An exception occured during import!\nMessage:\n\t{ ex.Message}\n\nStack - Trace:\n\t{ ex.StackTrace}", "Create Client Exception", LogEventLevel.Error);
-
-                return;
             }
-
-            data_status_lb.ResetText();
-
-            newClient_btn.Enabled = true;
-            dumpClient_btn.Enabled = true;
+            finally
+            {
+                data_status_lb.ResetText();
+                newClient_btn.Enabled = true;
+                dumpClient_btn.Enabled = true;
+            }
         }
 
         async void dumpClient(string dataPath)
         {
+            Encoding encoding = Encoding.GetEncoding(configMgr.Get<int>("Codepage", "Grim", 1252));
+            bool backup = configMgr.Get<bool>("Backup", "data", true);
             string buildDir = configMgr.GetDirectory("BuildDirectory", "Grim");
+            DataExportOptions exportOptions = DataPerformanceConfig.GetExportOptions(configMgr);
 
-            data.CurrentMaxDetermined += (o, x) =>
-            {
-                this.Invoke(new MethodInvoker(delegate
-                {
-                    data_prg.Maximum = (int)x.Maximum;
-                }));
-            };
-
-            data.CurrentProgressChanged += (o, x) =>
-            {
-                this.Invoke(new MethodInvoker(delegate
-                {
-                    data_prg.Value = (int)x.Value;
-                }));
-            };
-
-            data.CurrentProgressReset += (o, x) =>
-            {
-                this.Invoke(new MethodInvoker(delegate
-                {
-                    data_prg.Maximum = 100;
-                    data_prg.Value = 0;
-                }));
-            };
+            ensureDataCore(backup, encoding);
 
             await Task.Run(() =>
             {
@@ -559,9 +570,7 @@ namespace Grimoire.Tabs.Styles
                 return;
             }
 
-#pragma warning disable CS4014
-            Task.Run(() => { data.ExportAllEntries(buildDir); });
-#pragma warning restore CS4014
+            await data.ExportAllEntriesAsync(buildDir, exportOptions);
         }
 
         async void saveRDBToSQL(string path)

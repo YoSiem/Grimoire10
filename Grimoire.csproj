@@ -2,7 +2,8 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net5.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <LangVersion>latest</LangVersion>
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationIcon>favicon.ico</ApplicationIcon>
     <StartupObject>Grimoire.Program</StartupObject>
@@ -11,23 +12,24 @@
 	<AssemblyVersion>0.5.1.6</AssemblyVersion>
 	<FileVersion>0.5.1.6</FileVersion>
 	<Version>0.5.1.6</Version>
+    <NoWarn>$(NoWarn);SYSLIB0011;WFO1000</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Be.Windows.Forms.HexBox" Version="1.6.1" />
     <PackageReference Include="HIC.System.Windows.Forms.DataVisualization" Version="1.0.1" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="ObjectListView.Official" Version="2.9.1" />
-    <PackageReference Include="Serilog" Version="2.10.0" />
-    <PackageReference Include="Serilog.Sinks.Console" Version="4.0.1" />
-    <PackageReference Include="Serilog.Sinks.File" Version="5.0.0" />
-    <PackageReference Include="System.Data.SqlClient" Version="4.8.3" />
-    <PackageReference Include="System.Text.Encoding.CodePages" Version="6.0.0" />
+    <PackageReference Include="Serilog" Version="4.3.1" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.2" />
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="10.0.3" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Archimedes\Archimedes.csproj" />
-    <ProjectReference Include="..\..\DataCore\DataCore\DataCore.csproj" />
+    <ProjectReference Include="..\YSMLib\src\YSMLib.Archimedes\YSMLib.Archimedes.csproj" />
+    <ProjectReference Include="..\YSMLib\src\YSMLib.DataCore\YSMLib.DataCore.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -115,7 +115,7 @@ namespace Grimoire.Utilities
         /// <param name="directory">Directory containing previously dumped client</param>
         /// <returns>True if the dump is ready to build a client</returns>
 #pragma warning disable CS1998
-        public async static Task<bool> VerifyDump(string directory)
+        public async static Task<bool> VerifyDump(string directory, bool interactive = true, bool autoOverwrite = true)
         {
             string[] extDirs = Directory.GetDirectories(directory);
 
@@ -139,13 +139,17 @@ namespace Grimoire.Utilities
 
                     if (ext != dirExt)
                     {
-                        if (MessageBox.Show($"File: {name} does not belong to the directory: /{dirExt}/\n\nWould you like to move it", "Directory Mistmatch Found", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+                        bool moveFile = !interactive || MessageBox.Show($"File: {name} does not belong to the directory: /{dirExt}/\n\nWould you like to move it", "Directory Mistmatch Found", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
+
+                        if (moveFile)
                         {
                             string destName = $"{directory}//{ext}//{name}";
                             string sourceName = $"{extDir}//{name}";
 
                             if (File.Exists(destName))
-                                if (MessageBox.Show($"A file with the same name already exists in the destination folder!\n\nWould you like to delete it?", "Duplicate File Warning", MessageBoxButtons.YesNo, MessageBoxIcon.Exclamation) == DialogResult.Yes)
+                                if (!interactive && autoOverwrite)
+                                    File.Delete(destName);
+                                else if (MessageBox.Show($"A file with the same name already exists in the destination folder!\n\nWould you like to delete it?", "Duplicate File Warning", MessageBoxButtons.YesNo, MessageBoxIcon.Exclamation) == DialogResult.Yes)
                                     File.Delete(destName);
                                 else
                                     return false;
