@@ -4,6 +4,7 @@ using System.IO;
 using System.Text;
 using System.Windows.Forms;
 
+using Grimoire.CLI;
 using Grimoire.GUI;
 using Grimoire.Utilities;
 
@@ -15,10 +16,16 @@ namespace Grimoire
         ///  The main entry point for the application.
         /// </summary>
         [STAThread]
-        static void Main()
+        static int Main(string[] args)
         {
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
             Directory.SetCurrentDirectory(AppContext.BaseDirectory);
+
+            if (CliRunner.ShouldHandle(args))
+            {
+                ConsoleHost.EnsureConsole();
+                return CliRunner.RunAsync(args).GetAwaiter().GetResult();
+            }
 
             Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
             Application.EnableVisualStyles();
@@ -26,6 +33,7 @@ namespace Grimoire
             ModernTheme.Initialize();
 
             Application.Run(new Main());
+            return 0;
         }
     }
 }
