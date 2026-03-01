@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Windows.Forms;
 using System.Xml.Linq;
+using System.Xml;
 using System.Globalization;
 using Grimoire.Localization.Structures;
 using Grimoire.Localization.Enums;
@@ -66,7 +67,7 @@ namespace Grimoire.Utilities
                 }
             }
 
-            string[] filePaths = Directory.GetFiles(localeDir);
+            string[] filePaths = Directory.GetFiles(localeDir, "*.xml");
             Log.Debug($"{filePaths.Length} locales found in:\n\t- {localeDir}");
 
             foreach (string filePath in filePaths)
@@ -150,7 +151,9 @@ namespace Grimoire.Utilities
 
         void parseXML(string filePath)
         {
-            XDocument xDoc = XDocument.Load(filePath);
+            XDocument xDoc = loadLocaleDocument(filePath);
+            if (xDoc == null)
+                return;
 
             List<XElement> element = xDoc.Elements("locale").ToList();
             if (element != null)
@@ -295,6 +298,59 @@ namespace Grimoire.Utilities
 
                 Log.Debug($"{locale.Controls.Count} control configurations loaded from locale: {locale.Name} located at:\n\t- {filePath}");
             }
+        }
+
+        XDocument loadLocaleDocument(string filePath)
+        {
+            try
+            {
+                return XDocument.Load(filePath);
+            }
+            catch (XmlException ex)
+            {
+                string raw = File.ReadAllText(filePath);
+                string sanitized = sanitizeXml(raw);
+
+                if (string.Equals(raw, sanitized, StringComparison.Ordinal))
+                {
+                    Log.Error(ex, $"Failed to parse locale XML at:\n\t- {filePath}");
+                    return null;
+                }
+
+                try
+                {
+                    Log.Warning($"Locale XML sanitization applied for:\n\t- {filePath}");
+                    return XDocument.Parse(sanitized);
+                }
+                catch (Exception retryEx)
+                {
+                    Log.Error(retryEx, $"Failed to parse locale XML after sanitization at:\n\t- {filePath}");
+                    return null;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, $"Failed to load locale XML at:\n\t- {filePath}");
+                return null;
+            }
+        }
+
+        static string sanitizeXml(string raw)
+        {
+            if (string.IsNullOrEmpty(raw))
+                return raw;
+
+            int start = 0;
+            while (start < raw.Length)
+            {
+                char c = raw[start];
+                if (!char.IsWhiteSpace(c) && c != '\uFEFF' && c != '\u200B' && c != '\0')
+                    break;
+
+                start++;
+            }
+
+            return start > 0 ? raw[start..] : raw;
         }
 
         void localizeControls(Control.ControlCollection controls, Locale activeLocale)
