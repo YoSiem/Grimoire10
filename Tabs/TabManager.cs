@@ -5,6 +5,7 @@ using Archimedes;
 using Grimoire.Configuration;
 using Grimoire.GUI;
 using Grimoire.Structures;
+using Grimoire.Utilities;
 
 using Serilog;
 
@@ -333,6 +334,7 @@ namespace Grimoire.Tabs
 
             pages.Add(tab);
             SetText(key, text);
+            ModernTheme.Apply(tab);
 
             Log.Verbose($"New {((Style)style).ToString()} tab named {text} created!");
 

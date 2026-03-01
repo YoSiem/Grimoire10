@@ -56,6 +56,7 @@ namespace Grimoire.GUI
             Task.Run(() => { StructureManager.Instance.Load(ConfigMgr.GetDirectory("Directory", "Structures")); });
 
             localize();
+            ModernTheme.Apply(this);
         }
 
         void configLogger()
@@ -147,8 +148,11 @@ namespace Grimoire.GUI
             }
         }
 
-        private void Main_Shown(object sender, EventArgs e) =>
+        private void Main_Shown(object sender, EventArgs e)
+        {
             tManager.Create(Style.LAUNCHER);
+            ModernTheme.Apply(this);
+        }
 
         private void Main_FormClosing(object sender, FormClosingEventArgs e) => 
             Log.Information("Grimoire shutting down...");

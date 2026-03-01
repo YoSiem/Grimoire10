@@ -143,6 +143,9 @@ namespace Grimoire.Utilities
                     }
                     break;
             }
+
+            if (sender is Control control)
+                ModernTheme.Apply(control);
         }
 
         void parseXML(string filePath)

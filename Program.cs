@@ -1,12 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 
 using Grimoire.GUI;
+using Grimoire.Utilities;
 
 namespace Grimoire
 {
@@ -18,12 +17,13 @@ namespace Grimoire
         [STAThread]
         static void Main()
         {
-            System.Text.Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
             Directory.SetCurrentDirectory(AppContext.BaseDirectory);
 
-            Application.SetHighDpiMode(HighDpiMode.SystemAware);
+            Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+            ModernTheme.Initialize();
 
             Application.Run(new Main());
         }
