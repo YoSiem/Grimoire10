@@ -10,26 +10,18 @@ using Serilog;
 
 namespace Grimoire.Tabs
 {
-    public class TabManager
+    public sealed class TabManager
     {
         #region Properties
 
-        readonly Main main = null;
-        readonly ConfigManager configMgr = Main.Instance.ConfigMgr;
-        readonly TabControl tabs = null;
-        readonly TabControl.TabPageCollection pages = null;
-        static TabManager instance;
+        static readonly Lazy<TabManager> instance = new(() => new TabManager());
 
-        public static TabManager Instance
-        {
-            get
-            {
-                if (instance == null)
-                    instance = new TabManager();
+        readonly Main main;
+        readonly ConfigManager configMgr;
+        readonly TabControl tabs;
+        readonly TabControl.TabPageCollection pages;
 
-                return instance;
-            }
-        }
+        public static TabManager Instance => instance.Value;
 
         public int RightClick_TabIdx = 0;
 
@@ -251,9 +243,10 @@ namespace Grimoire.Tabs
 
         #endregion
 
-        public TabManager()
+        TabManager()
         {
             main = GUI.Main.Instance;
+            configMgr = Main.Instance.ConfigMgr;
             tabs = main.TabControl;
             pages = tabs.TabPages;
 

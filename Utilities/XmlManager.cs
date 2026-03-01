@@ -12,33 +12,19 @@ using Serilog;
 
 namespace Grimoire.Utilities
 {
-    public class XmlManager
+    public sealed class XmlManager
     {
-        Configuration.ConfigManager ConfigMan = GUI.Main.Instance.ConfigMgr;
+        private static readonly Lazy<XmlManager> instance = new(() => new XmlManager());
+        private readonly Configuration.ConfigManager ConfigMan = GUI.Main.Instance.ConfigMgr;
 
-        List<Locale> locales = new List<Locale>();
-        Locale locale
-        {   
-            get { return locales.Find(l => l.Name == key); }
-        }
+        private readonly List<Locale> locales = new();
 
-        string key;
-        string localeDir;
+        private string key = string.Empty;
+        private string localeDir = string.Empty;
 
-        static XmlManager instance;
-        public static XmlManager Instance
-        {
-            get
-            {
-                if (instance == null)
-                    instance = new XmlManager();
+        public static XmlManager Instance => instance.Value;
 
-                return instance;
-            }
-            set { instance = value; }
-        }
-
-        public XmlManager()
+        private XmlManager()
         {
             key = ConfigMan["Locale"];
             localeDir = ConfigMan.GetDirectory("Directory", "Localization");
@@ -81,21 +67,22 @@ namespace Grimoire.Utilities
             }
 
             string[] filePaths = Directory.GetFiles(localeDir);
-            for (int i = 0; i < filePaths.Length; i++)
-            {
-                Log.Debug($"{filePaths.Length} locales found in:\n\t- {localeDir}");
+            Log.Debug($"{filePaths.Length} locales found in:\n\t- {localeDir}");
 
-                parseXML(filePaths[i]);
-            }
+            foreach (string filePath in filePaths)
+                parseXML(filePath);
         }
 
         public void RefreshLocale()
         {
-            string localePath = string.Format(@"{0}\{1}.xml", localeDir, key);
+            string localePath = Path.Combine(localeDir, $"{key}.xml");
 
             if (File.Exists(localePath))
             {
-                locales.Remove(locale);
+                int idx = locales.FindIndex(l => l.Name == key);
+                if (idx >= 0)
+                    locales.RemoveAt(idx);
+
                 parseXML(localePath);
             }
         }
@@ -108,7 +95,8 @@ namespace Grimoire.Utilities
                 return;
             }
 
-            if (locales.FindIndex(l => l.Name == key) == -1)
+            int localeIndex = locales.FindIndex(l => l.Name == key);
+            if (localeIndex == -1)
             {
                 key = "en-US";
                 string msg = string.Format("Requested Locale not found. Defaulting to en-US.");
@@ -118,11 +106,14 @@ namespace Grimoire.Utilities
                 MessageBox.Show(msg, "XML Warning", MessageBoxButtons.OK, MessageBoxIcon.Hand);
             }
 
-            if (locales.FindIndex(l => l.Name == key) == -1)
+            localeIndex = locales.FindIndex(l => l.Name == key);
+            if (localeIndex == -1)
             {
                 Log.Warning($"Locale '{key}' is still unavailable after fallback. Skipping localization pass.");
                 return;
             }
+
+            Locale activeLocale = locales[localeIndex];
 
             switch (type)
             {
@@ -132,7 +123,7 @@ namespace Grimoire.Utilities
 
                         if (f != null)
                         {
-                            localizeControls(f.Controls);
+                            localizeControls(f.Controls, activeLocale);
 
                             Log.Debug($"{f.Controls.Count} control configurations loaded for gui: {f.Name}");
                         }
@@ -145,7 +136,7 @@ namespace Grimoire.Utilities
 
                         if (u != null)
                         {
-                            localizeControls(u.Controls);
+                            localizeControls(u.Controls, activeLocale);
 
                             Log.Debug($"{u.Controls.Count} control configurations loaded for tab: {u.Name}");
                         }
@@ -303,7 +294,7 @@ namespace Grimoire.Utilities
             }
         }
 
-        void localizeControls(Control.ControlCollection controls)
+        void localizeControls(Control.ControlCollection controls, Locale activeLocale)
         {
             foreach (Control control in controls)
             {
@@ -317,7 +308,7 @@ namespace Grimoire.Utilities
 
                     foreach (ToolStripMenuItem tsmi in ms.Items)
                     {
-                        config = locale.Controls.Find(c => c.Name == tsmi.Name);
+                        config = activeLocale.Controls.Find(c => c.Name == tsmi.Name);
 
                         if (config != null)
                         {
@@ -332,7 +323,7 @@ namespace Grimoire.Utilities
                         if (tsmi.HasDropDownItems)
                             foreach (ToolStripMenuItem subTSMI in tsmi.DropDownItems)
                             {
-                                config = locale.Controls.Find(c => c.Name == subTSMI.Name);
+                                config = activeLocale.Controls.Find(c => c.Name == subTSMI.Name);
 
                                 if (config != null)
                                 {
@@ -351,7 +342,7 @@ namespace Grimoire.Utilities
                     // Define the base group_box and set his text
                     GroupBox grpBx = (GroupBox)control;
 
-                    config = locale.Controls.Find(c => c.Name == grpBx.Name);
+                    config = activeLocale.Controls.Find(c => c.Name == grpBx.Name);
                     if (config != null)
                         grpBx.Text = config.Text.Text;
 
@@ -365,7 +356,7 @@ namespace Grimoire.Utilities
                         {
                             Button btn = (Button)ctrl;
 
-                            config = locale.Controls.Find(c => c.Name == btn.Name);
+                            config = activeLocale.Controls.Find(c => c.Name == btn.Name);
 
                             if (config != null)
                                 btn.TextAlign = config.Text.Alignment;
@@ -374,7 +365,7 @@ namespace Grimoire.Utilities
                         {
                             RadioButton rBtn = (RadioButton)ctrl;
 
-                            config = locale.Controls.Find(c => c.Name == rBtn.Name);
+                            config = activeLocale.Controls.Find(c => c.Name == rBtn.Name);
 
                             if (config != null)
                                 rBtn.TextAlign = config.Text.Alignment;
@@ -383,7 +374,7 @@ namespace Grimoire.Utilities
                         {
                             Label lbl = (Label)ctrl;
 
-                            config = locale.Controls.Find(c => c.Name == lbl.Name);
+                            config = activeLocale.Controls.Find(c => c.Name == lbl.Name);
 
                             if (config != null)
                                 lbl.TextAlign = config.Text.Alignment;
@@ -392,7 +383,7 @@ namespace Grimoire.Utilities
                         {
                             CheckBox chkBx = (CheckBox)ctrl;
 
-                            config = locale.Controls.Find(c => c.Name == chkBx.Name);
+                            config = activeLocale.Controls.Find(c => c.Name == chkBx.Name);
 
                             if (config != null)
                                 chkBx.TextAlign = config.Text.Alignment;
@@ -424,7 +415,7 @@ namespace Grimoire.Utilities
                         {
                             ToolStripDropDownButton tsb = (ToolStripDropDownButton)tso;
 
-                            config = locale.Controls.Find(c => c.Name == tsb.Name);
+                            config = activeLocale.Controls.Find(c => c.Name == tsb.Name);
 
                             if (config != null)
                             {
@@ -438,7 +429,7 @@ namespace Grimoire.Utilities
                         {
                             ToolStripButton tsb = (ToolStripButton)tso;
 
-                            config = locale.Controls.Find(c => c.Name == tsb.Name);
+                            config = activeLocale.Controls.Find(c => c.Name == tsb.Name);
 
                             if (config != null)
                             {
@@ -452,7 +443,7 @@ namespace Grimoire.Utilities
                         {
                             ToolStripMenuItem tsi = (ToolStripMenuItem)tso;
 
-                            config = locale.Controls.Find(c => c.Name == tsi.Name);
+                            config = activeLocale.Controls.Find(c => c.Name == tsi.Name);
 
                             if (config != null)
                             {
@@ -466,7 +457,7 @@ namespace Grimoire.Utilities
                         {
                             ToolStripLabel tsl = (ToolStripLabel)tso;
 
-                            config = locale.Controls.Find(c => c.Name == tsl.Name);
+                            config = activeLocale.Controls.Find(c => c.Name == tsl.Name);
 
                             if (config != null)
                                 {
@@ -493,7 +484,7 @@ namespace Grimoire.Utilities
                 }
                 else
                 {
-                    config = locale.Controls.Find(c => c.Name == control.Name);
+                    config = activeLocale.Controls.Find(c => c.Name == control.Name);
 
                     if (config != null)
                     {

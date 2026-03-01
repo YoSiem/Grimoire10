@@ -7,7 +7,6 @@ using System.Text;
 using System.Threading.Tasks;
 using Archimedes;
 using Archimedes.Enums;
-using Grimoire.Configuration;
 using Grimoire.Utilities;
 
 using MoonSharp.Interpreter;
@@ -17,28 +16,19 @@ using Serilog.Events;
 
 namespace Grimoire.Structures
 {
-    public class StructureManager : IEnumerable<StructureObject>
+    public sealed class StructureManager : IEnumerable<StructureObject>
     {
-        ConfigManager configMgr = GUI.Main.Instance.ConfigMgr;
+        private static readonly Lazy<StructureManager> instance = new(() => new StructureManager());
 
-        string structDir;
+        private string structDir = string.Empty;
 
-        List<StructureObject> structures = new List<StructureObject>();
+        private readonly List<StructureObject> structures = new();
 
-        static StructureManager instance;
+        public List<float> AvailableEpics { get; } = new();
 
-        public List<float> AvailableEpics = new List<float>();
+        public static StructureManager Instance => instance.Value;
 
-        public static StructureManager Instance
-        {
-            get
-            {
-                if (instance == null)
-                    instance = new StructureManager();
-
-                return instance;
-            }
-        }
+        private StructureManager() { }
 
         /// <summary>
         /// Get a new instance of the structure object bearing the given name.
@@ -47,7 +37,14 @@ namespace Grimoire.Structures
         /// <returns>Partially initialized (schema only) unique structure object</returns>
         public async Task<StructureObject> GetStruct(string name)
         {
-            StructureObject structObj = structures.Find(s => s.StructName == name).Clone() as StructureObject;
+            StructureObject schema = structures.Find(s => s.StructName == name);
+            if (schema == null)
+            {
+                LogUtility.MessageBoxAndLog("Failed to get the target structure object!", "GetStruct Exception", LogEventLevel.Error);
+                return null;
+            }
+
+            StructureObject structObj = schema.Clone() as StructureObject;
 
             if (structObj == null)
             {
@@ -65,8 +62,14 @@ namespace Grimoire.Structures
         {
             structures.Clear();
 
-            if (directory is not null)
+            if (!string.IsNullOrWhiteSpace(directory))
                 structDir = directory;
+
+            if (string.IsNullOrWhiteSpace(structDir) || !Directory.Exists(structDir))
+            {
+                Log.Error($"Structures directory is invalid: {structDir}");
+                return;
+            }
 
             foreach (string filename in Directory.GetFiles(structDir))
             {
